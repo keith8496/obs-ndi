@@ -70,6 +70,8 @@ struct ndi_source
 	NDIlib_tally_t tally;
 	bool alpha_filter_enabled;
 	os_performance_token_t* perf_token;
+        bool init_done;
+       	NDIlib_framesync_instance_t ndi_framesync;
 };
 
 static obs_source_t* find_filter_by_id(obs_source_t* context, const char* id)
@@ -286,129 +288,6 @@ void ndi_source_getdefaults(obs_data_t* settings)
 	obs_data_set_default_int(settings, PROP_LATENCY, PROP_LATENCY_NORMAL);
 }
 
-void* ndi_source_poll_audio_video(void* data)
-{
-	auto s = (struct ndi_source*)data;
-
-	blog(LOG_INFO, "A/V thread for '%s' started",
-						obs_source_get_name(s->source));
-
-	NDIlib_audio_frame_v3_t audio_frame;
-	obs_source_audio obs_audio_frame = {0};
-	NDIlib_video_frame_v2_t video_frame;
-	obs_source_frame obs_video_frame = {0};
-
-	if (s->perf_token) {
-		os_end_high_performance(s->perf_token);
-	}
-	s->perf_token = os_request_high_performance("NDI Receiver Thread");
-
-	NDIlib_frame_type_e frame_received = NDIlib_frame_type_none;
-	while (s->running) {
-		if (ndiLib->recv_get_no_connections(s->ndi_receiver) == 0) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			continue;
-		}
-
-		frame_received = ndiLib->recv_capture_v3(
-			s->ndi_receiver, &video_frame, &audio_frame, nullptr, 100);
-
-		int channelCount = (int)fmin(8, audio_frame.no_channels);
-		if (frame_received == NDIlib_frame_type_audio) {
-			obs_audio_frame.speakers = channel_count_to_layout(channelCount);
-
-			switch (s->sync_mode) {
-				case PROP_SYNC_NDI_TIMESTAMP:
-					obs_audio_frame.timestamp =
-						(uint64_t)(audio_frame.timestamp * 100);
-					break;
-
-				case PROP_SYNC_NDI_SOURCE_TIMECODE:
-					obs_audio_frame.timestamp =
-						(uint64_t)(audio_frame.timecode * 100);
-					break;
-			}
-
-			obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
-			obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
-			obs_audio_frame.frames = audio_frame.no_samples;
-
-			for (int i = 0; i < channelCount; ++i) {
-				obs_audio_frame.data[i] =
-					(uint8_t*)(&audio_frame.p_data[i * audio_frame.no_samples]);
-			}
-
-			obs_source_output_audio(s->source, &obs_audio_frame);
-			ndiLib->recv_free_audio_v3(s->ndi_receiver, &audio_frame);
-		}
-
-		if (frame_received == NDIlib_frame_type_video) {
-			switch (video_frame.FourCC) {
-				case NDIlib_FourCC_type_BGRA:
-					obs_video_frame.format = VIDEO_FORMAT_BGRA;
-					break;
-
-				case NDIlib_FourCC_type_BGRX:
-					obs_video_frame.format = VIDEO_FORMAT_BGRX;
-					break;
-
-				case NDIlib_FourCC_type_RGBA:
-				case NDIlib_FourCC_type_RGBX:
-					obs_video_frame.format = VIDEO_FORMAT_RGBA;
-					break;
-
-				case NDIlib_FourCC_type_UYVY:
-				case NDIlib_FourCC_type_UYVA:
-					obs_video_frame.format = VIDEO_FORMAT_UYVY;
-					break;
-
-				case NDIlib_FourCC_type_I420:
-					obs_video_frame.format = VIDEO_FORMAT_I420;
-					break;
-
-				case NDIlib_FourCC_type_NV12:
-					obs_video_frame.format = VIDEO_FORMAT_NV12;
-					break;
-
-				default:
-					blog(LOG_INFO, "warning: unsupported video pixel format: %d", video_frame.FourCC);
-					break;
-			}
-
-			switch (s->sync_mode) {
-				case PROP_SYNC_NDI_TIMESTAMP:
-					obs_video_frame.timestamp =
-						(uint64_t)(video_frame.timestamp * 100);
-					break;
-
-				case PROP_SYNC_NDI_SOURCE_TIMECODE:
-					obs_video_frame.timestamp =
-						(uint64_t)(video_frame.timecode * 100);
-					break;
-			}
-
-			obs_video_frame.width = video_frame.xres;
-			obs_video_frame.height = video_frame.yres;
-			obs_video_frame.linesize[0] = video_frame.line_stride_in_bytes;
-			obs_video_frame.data[0] = video_frame.p_data;
-
-			video_format_get_parameters(s->yuv_colorspace, s->yuv_range,
-				obs_video_frame.color_matrix, obs_video_frame.color_range_min,
-				obs_video_frame.color_range_max);
-
-			obs_source_output_video(s->source, &obs_video_frame);
-			ndiLib->recv_free_video_v2(s->ndi_receiver, &video_frame);
-		}
-	}
-
-	os_end_high_performance(s->perf_token);
-	s->perf_token = NULL;
-
-	blog(LOG_INFO, "audio thread for '%s' completed",
-				obs_source_get_name(s->source));
-	return nullptr;
-}
-
 void ndi_source_update(void* data, obs_data_t* settings)
 {
 	auto s = (struct ndi_source*)data;
@@ -418,6 +297,7 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		pthread_join(s->av_thread, NULL);
 	}
 	s->running = false;
+        ndiLib->framesync_destroy(s->ndi_framesync);
 	ndiLib->recv_destroy(s->ndi_receiver);
 
 	bool hwAccelEnabled = obs_data_get_bool(settings, PROP_HW_ACCEL);
@@ -486,7 +366,7 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		}
 
 		s->running = true;
-		pthread_create(&s->av_thread, nullptr, ndi_source_poll_audio_video, data);
+//		pthread_create(&s->av_thread, nullptr, ndi_source_poll_audio_video, data);
 
 		blog(LOG_INFO, "started A/V threads for source '%s'",
 			recv_desc.source_to_connect_to.p_ndi_name);
@@ -495,6 +375,7 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		s->tally.on_preview = obs_source_showing(s->source);
 		s->tally.on_program = obs_source_active(s->source);
 		ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+		s->ndi_framesync = ndiLib->framesync_create(s->ndi_receiver);
 	} else {
 		blog(LOG_ERROR,
 			"can't create a receiver for NDI source '%s'",
@@ -557,8 +438,121 @@ void ndi_source_destroy(void* data)
 	auto s = (struct ndi_source*)data;
 	s->running = false;
 	pthread_join(s->av_thread, NULL);
+	ndiLib->framesync_destroy(s->ndi_framesync);
 	ndiLib->recv_destroy(s->ndi_receiver);
 	bfree(s);
+}
+
+void ndi_source_video_tick(void *data, float seconds)
+{
+        auto s = (struct ndi_source*)data;
+
+	NDIlib_audio_frame_v2_t audio_frame;
+	obs_source_audio obs_audio_frame = {0};
+	NDIlib_video_frame_v2_t video_frame;
+	obs_source_frame obs_video_frame = {0};
+
+	ndiLib->framesync_capture_video(
+		s->ndi_framesync,
+		&video_frame,
+		NDIlib_frame_format_type_progressive);
+
+
+        ndiLib->framesync_capture_audio(
+        	s->ndi_framesync,
+                &audio_frame,
+                0, 0, int(44000*seconds));
+
+	int channelCount = (int)fmin(8, audio_frame.no_channels);
+	obs_audio_frame.speakers = channel_count_to_layout(channelCount);
+
+	switch (s->sync_mode) {
+		case PROP_SYNC_NDI_TIMESTAMP:
+			obs_audio_frame.timestamp =
+				(uint64_t)(audio_frame.timestamp * 100);
+			break;
+		case PROP_SYNC_NDI_SOURCE_TIMECODE:
+			obs_audio_frame.timestamp =
+				(uint64_t)(audio_frame.timecode * 100);
+			break;
+	}
+	obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
+	obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
+	obs_audio_frame.frames = audio_frame.no_samples;
+
+	for (int i = 0; i < channelCount; ++i) {
+		obs_audio_frame.data[i] =
+			(uint8_t*)(&audio_frame.p_data[i * audio_frame.no_samples]);
+	}
+
+	obs_source_output_audio(s->source, &obs_audio_frame);
+	ndiLib->framesync_free_audio(s->ndi_framesync, &audio_frame);
+
+
+// ######### START OF VIDEO
+
+			switch (video_frame.FourCC) {
+				case NDIlib_FourCC_type_BGRA:
+					obs_video_frame.format = VIDEO_FORMAT_BGRA;
+					break;
+
+				case NDIlib_FourCC_type_BGRX:
+					obs_video_frame.format = VIDEO_FORMAT_BGRX;
+					break;
+
+				case NDIlib_FourCC_type_RGBA:
+				case NDIlib_FourCC_type_RGBX:
+					obs_video_frame.format = VIDEO_FORMAT_RGBA;
+					break;
+
+				case NDIlib_FourCC_type_UYVY:
+				case NDIlib_FourCC_type_UYVA:
+					obs_video_frame.format = VIDEO_FORMAT_UYVY;
+					break;
+
+				case NDIlib_FourCC_type_I420:
+					obs_video_frame.format = VIDEO_FORMAT_I420;
+					break;
+
+				case NDIlib_FourCC_type_NV12:
+					obs_video_frame.format = VIDEO_FORMAT_NV12;
+					break;
+
+				default:
+					//blog(LOG_INFO, "warning: unsupported video pixel format: %d", video_frame.FourCC);
+					ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
+					return;
+					break;
+			}
+
+
+			switch (s->sync_mode) {
+				case PROP_SYNC_NDI_TIMESTAMP:
+					obs_video_frame.timestamp =
+						(uint64_t)(video_frame.timestamp * 100);
+					break;
+
+				case PROP_SYNC_NDI_SOURCE_TIMECODE:
+					obs_video_frame.timestamp =
+						(uint64_t)(video_frame.timecode * 100);
+					break;
+			}
+
+			obs_video_frame.width = video_frame.xres;
+			obs_video_frame.height = video_frame.yres;
+			obs_video_frame.linesize[0] = video_frame.line_stride_in_bytes;
+			obs_video_frame.data[0] = video_frame.p_data;
+
+			video_format_get_parameters(s->yuv_colorspace, s->yuv_range,
+				obs_video_frame.color_matrix, obs_video_frame.color_range_min,
+				obs_video_frame.color_range_max);
+
+			obs_source_output_video(s->source, &obs_video_frame);
+			ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
+
+
+
+
 }
 
 struct obs_source_info create_ndi_source_info()
@@ -578,6 +572,7 @@ struct obs_source_info create_ndi_source_info()
 	ndi_source_info.deactivate		= ndi_source_deactivated;
 	ndi_source_info.create			= ndi_source_create;
 	ndi_source_info.destroy			= ndi_source_destroy;
+        ndi_source_info.video_tick		= ndi_source_video_tick;
 
 	return ndi_source_info;
 }
