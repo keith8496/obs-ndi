@@ -133,6 +133,32 @@ static speaker_layout channel_count_to_layout(int channels)
 	}
 }
 
+static int layout_to_channel_count(int channels)
+{
+	switch (channels) {
+	case SPEAKERS_MONO:
+		return 1;
+	case SPEAKERS_STEREO:
+		return 2;
+	case SPEAKERS_2POINT1:
+		return 3;
+	case SPEAKERS_4POINT0:
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(21, 0, 0)
+		return 4;
+#else
+		return 4;
+#endif
+	case SPEAKERS_4POINT1:
+		return 5;
+	case SPEAKERS_5POINT1:
+		return 6;
+	case SPEAKERS_7POINT1:
+		return 8;
+	default:
+		return 9;
+	}
+}
+
 static video_colorspace prop_to_colorspace(int index)
 {
 	switch (index) {
@@ -503,7 +529,10 @@ void ndi_source_video_tick(void *data, float seconds)
 
 
 // ######### START OF VIDEO
-
+	if (video_frame.xres == 0 || video_frame.yres == 0) {
+	        // frame is empty
+		return;
+	}
 			switch (video_frame.FourCC) {
 				case NDIlib_FourCC_type_BGRA:
 					obs_video_frame.format = VIDEO_FORMAT_BGRA;
