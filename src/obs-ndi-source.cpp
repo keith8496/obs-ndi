@@ -72,6 +72,9 @@ struct ndi_source
 	os_performance_token_t* perf_token;
         bool init_done;
        	NDIlib_framesync_instance_t ndi_framesync;
+       	bool do_tally;
+       	uint64_t last_audio_ts;
+       	int audio_samples_per_sec;
 };
 
 static obs_source_t* find_filter_by_id(obs_source_t* context, const char* id)
@@ -457,11 +460,20 @@ void ndi_source_video_tick(void *data, float seconds)
 		&video_frame,
 		NDIlib_frame_format_type_progressive);
 
+        if (s->last_audio_ts == 0) { // some guessing
+        	s->last_audio_ts = os_gettime_ns() - (seconds*1000000000ul);
+        	s->audio_samples_per_sec = 48000;
+        }
+
+	uint64_t cached_ns = os_gettime_ns();
+	double time_elapsed = (cached_ns - s->last_audio_ts) / (double)1000000000ul;
 
         ndiLib->framesync_capture_audio(
         	s->ndi_framesync,
                 &audio_frame,
-                0, 0, int(44000*seconds));
+                0, 0, int(s->audio_samples_per_sec*time_elapsed));
+	s->last_audio_ts = cached_ns;
+	obs_audio_frame.timestamp = cached_ns;
 
 	int channelCount = (int)fmin(8, audio_frame.no_channels);
 	obs_audio_frame.speakers = channel_count_to_layout(channelCount);
@@ -477,6 +489,7 @@ void ndi_source_video_tick(void *data, float seconds)
 			break;
 	}
 	obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
+	s->audio_samples_per_sec = audio_frame.sample_rate;
 	obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
 	obs_audio_frame.frames = audio_frame.no_samples;
 
