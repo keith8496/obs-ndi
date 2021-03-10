@@ -133,32 +133,6 @@ static speaker_layout channel_count_to_layout(int channels)
 	}
 }
 
-static int layout_to_channel_count(int channels)
-{
-	switch (channels) {
-	case SPEAKERS_MONO:
-		return 1;
-	case SPEAKERS_STEREO:
-		return 2;
-	case SPEAKERS_2POINT1:
-		return 3;
-	case SPEAKERS_4POINT0:
-#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(21, 0, 0)
-		return 4;
-#else
-		return 4;
-#endif
-	case SPEAKERS_4POINT1:
-		return 5;
-	case SPEAKERS_5POINT1:
-		return 6;
-	case SPEAKERS_7POINT1:
-		return 8;
-	default:
-		return 9;
-	}
-}
-
 static video_colorspace prop_to_colorspace(int index)
 {
 	switch (index) {
@@ -475,9 +449,6 @@ void ndi_source_destroy(void* data)
 void ndi_source_video_tick(void *data, float seconds)
 {
         auto s = (struct ndi_source*)data;
-        
-        obs_audio_info oai;
-        obs_get_audio_info(&oai);
 
 	NDIlib_audio_frame_v2_t audio_frame;
 	obs_source_audio obs_audio_frame = {0};
@@ -489,10 +460,20 @@ void ndi_source_video_tick(void *data, float seconds)
 		&video_frame,
 		NDIlib_frame_format_type_progressive);
 
+        if (s->last_audio_ts == 0) { // some guessing
+        	s->last_audio_ts = os_gettime_ns() - (seconds*1000000000ul);
+        	s->audio_samples_per_sec = 48000;
+        }
+
+	uint64_t cached_ns = os_gettime_ns();
+	double time_elapsed = (cached_ns - s->last_audio_ts) / (double)1000000000ul;
+
         ndiLib->framesync_capture_audio(
         	s->ndi_framesync,
                 &audio_frame,
-                (int)oai.samples_per_sec, layout_to_channel_count(oai.speakers), int((double)seconds*(double)oai.samples_per_sec));
+                0, 0, int(s->audio_samples_per_sec*time_elapsed));
+	s->last_audio_ts = cached_ns;
+	obs_audio_frame.timestamp = cached_ns;
 
 	int channelCount = (int)fmin(8, audio_frame.no_channels);
 	obs_audio_frame.speakers = channel_count_to_layout(channelCount);
@@ -507,8 +488,8 @@ void ndi_source_video_tick(void *data, float seconds)
 				(uint64_t)(audio_frame.timecode * 100);
 			break;
 	}
-	
-	obs_audio_frame.samples_per_sec = oai.samples_per_sec;
+	obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
+	s->audio_samples_per_sec = audio_frame.sample_rate;
 	obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
 	obs_audio_frame.frames = audio_frame.no_samples;
 
@@ -521,12 +502,8 @@ void ndi_source_video_tick(void *data, float seconds)
 	ndiLib->framesync_free_audio(s->ndi_framesync, &audio_frame);
 
 
-	// ######### START OF VIDEO
+// ######### START OF VIDEO
 
-	if (video_frame.xres == 0 || video_frame.yres == 0) {
-	        // frame is empty
-		return;
-	}
 			switch (video_frame.FourCC) {
 				case NDIlib_FourCC_type_BGRA:
 					obs_video_frame.format = VIDEO_FORMAT_BGRA;
@@ -585,6 +562,10 @@ void ndi_source_video_tick(void *data, float seconds)
 
 			obs_source_output_video(s->source, &obs_video_frame);
 			ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
+
+
+
+
 }
 
 struct obs_source_info create_ndi_source_info()
