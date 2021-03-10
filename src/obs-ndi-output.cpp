@@ -256,6 +256,60 @@ void ndi_output_destroy(void* data)
 	bfree(o);
 }
 
+int inline get_frame_rate_N (double fr) 
+{
+	int fr_i = int(fr*100.0f); // only works for progressive (from NDI SDK docs)
+	
+	switch (fr_i) {
+		case 5994:
+			return 60000;
+		break;
+		case 5000:
+			return 30000;
+		break;
+		case 2500:
+			return 30000;
+		break;
+		case 3000:
+			return 30000;
+		break;
+		case 2400:
+			return 24000;
+		break;
+		default:
+			return 30000;
+		break;
+	
+	}
+}
+
+int inline get_frame_rate_D (double fr) 
+{
+	int fr_i = int(fr*100.0f); // only works for progressive (from NDI SDK docs)
+	
+	switch (fr_i) {
+		case 5994:
+			return 1001;
+		break;
+		case 5000:
+			return 1200;
+		break;
+		case 25000:
+			return 1200;
+		break;
+		case 3000:
+			return 1001;
+		break;
+		case 2400:
+			return 1001;
+		break;
+		default:
+			return 1001;
+		break;
+	
+	}
+}
+
 void ndi_output_rawvideo(void* data, struct video_data* frame)
 {
 	auto o = (struct ndi_output*)data;
@@ -269,10 +323,10 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	NDIlib_video_frame_v2_t video_frame = {0};
 	video_frame.xres = width;
 	video_frame.yres = height;
-	video_frame.frame_rate_N = (int)(o->video_framerate * 100);
-	video_frame.frame_rate_D = 100; // TODO fixme: broken on fractional framerates
+	video_frame.frame_rate_N = get_frame_rate_N(o->video_framerate);
+	video_frame.frame_rate_D = get_frame_rate_D(o->video_framerate);
 	video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
-	video_frame.timecode = (int64_t)(frame->timestamp / 100);
+	video_frame.timecode = NDIlib_send_timecode_synthesize;
 	video_frame.FourCC = o->frame_fourcc;
 
 	if (video_frame.FourCC == NDIlib_FourCC_type_UYVY) {
@@ -287,7 +341,7 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 		video_frame.line_stride_in_bytes = frame->linesize[0];
 	}
 
-	ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
+	ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
 }
 
 void ndi_output_rawaudio(void* data, struct audio_data* frame)
