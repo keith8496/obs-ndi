@@ -63,6 +63,7 @@ struct ndi_output
 {
 	obs_output_t *output;
 	const char* ndi_name;
+	
 	bool uses_video;
 	bool uses_audio;
 
@@ -85,6 +86,10 @@ struct ndi_output
 	size_t audio_conv_buffer_size;
 
 	os_performance_token_t* perf_token;
+	
+	bool synthesise_video_timestamps;
+	bool synthesise_audio_timestamps;
+	bool async_video_send;
 };
 
 const char* ndi_output_getname(void* data)
@@ -102,6 +107,10 @@ obs_properties_t* ndi_output_getproperties(void* data)
 
 	obs_properties_add_text(props, "ndi_name",
 		obs_module_text("NDIPlugin.OutputProps.NDIName"), OBS_TEXT_DEFAULT);
+	obs_properties_add_bool(props, SYNTHESISE_VIDEO_TIMESTAMPS,
+		"Synthesise Video Timecode");
+	obs_properties_add_bool(props, SYNTHESISE_AUDIO_TIMESTAMPS,
+		"Synthesise Audio Timecode");
 
 	return props;
 }
@@ -233,6 +242,9 @@ void ndi_output_update(void* data, obs_data_t* settings)
 	o->ndi_name = obs_data_get_string(settings, "ndi_name");
 	o->uses_video = obs_data_get_bool(settings, "uses_video");
 	o->uses_audio = obs_data_get_bool(settings, "uses_audio");
+	o->synthesise_video_timestamps = obs_data_get_bool(settings, SYNTHESISE_VIDEO_TIMESTAMPS);
+	o->synthesise_audio_timestamps = obs_data_get_bool(settings, SYNTHESISE_AUDIO_TIMESTAMPS);
+	o->async_video_send = obs_data_get_bool(settings, ASYNC_VIDEO_SEND);
 }
 
 void* ndi_output_create(obs_data_t* settings, obs_output_t* output)
@@ -326,7 +338,12 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	video_frame.frame_rate_N = get_frame_rate_N(o->video_framerate);
 	video_frame.frame_rate_D = get_frame_rate_D(o->video_framerate);
 	video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
-	video_frame.timecode = NDIlib_send_timecode_synthesize;
+	
+	if (o->synthesise_video_timestamps) {
+		video_frame.timecode = NDIlib_send_timecode_synthesize;
+	} else {
+		video_frame.timecode = (int64_t)(frame->timestamp / 100);
+	}
 	video_frame.FourCC = o->frame_fourcc;
 
 	if (video_frame.FourCC == NDIlib_FourCC_type_UYVY) {
@@ -341,7 +358,11 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 		video_frame.line_stride_in_bytes = frame->linesize[0];
 	}
 
-	ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
+	if (o->async_video_send) {
+		ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
+	} else {
+		ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
+	}
 }
 
 void ndi_output_rawaudio(void* data, struct audio_data* frame)
@@ -375,7 +396,12 @@ void ndi_output_rawaudio(void* data, struct audio_data* frame)
 	}
 
 	audio_frame.p_data = o->audio_conv_buffer;
-	audio_frame.timecode = NDIlib_send_timecode_synthesize;
+
+	if (o->synthesise_audio_timestamps) {
+		audio_frame.timecode = NDIlib_send_timecode_synthesize;
+	} else {
+		audio_frame.timecode = (int64_t)(frame->timestamp / 100);
+	}
 
 	ndiLib->send_send_audio_v3(o->ndi_sender, &audio_frame);
 }

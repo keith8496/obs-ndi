@@ -1,0 +1,1 @@
+cmake -DLIBOBS_INCLUDE_DIR=/home/aquarat/Projects/obs-studio -DCMAKE_INSTALL_PREFIX=/usr .. && make -j16 && sudo make install && sudo cp -fv /usr/lib/x86_64-linux-gnu/obs-plugins/obs-ndi.so /usr/lib/obs-plugins/ && obs --verbose

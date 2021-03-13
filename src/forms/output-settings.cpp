@@ -38,9 +38,16 @@ void OutputSettings::onFormAccepted() {
 
 	conf->OutputEnabled = ui->mainOutputGroupBox->isChecked();
 	conf->OutputName = ui->mainOutputName->text();
+	conf->main_synthesise_video_timestamps = ui->main_synthesise_video_timestamps_checkbox->isChecked();
+	conf->main_synthesise_audio_timestamps = ui->main_synthesise_audio_timestamps_checkbox->isChecked();
+	conf->main_async_video_send = ui->main_async_video_send_checkbox->isChecked();
 
 	conf->PreviewOutputEnabled = ui->previewOutputGroupBox->isChecked();
 	conf->PreviewOutputName = ui->previewOutputName->text();
+
+	conf->preview_synthesise_video_timestamps = ui->preview_synthesise_video_timestamps_checkbox->isChecked();
+	conf->preview_synthesise_audio_timestamps = ui->preview_synthesise_audio_timestamps_checkbox->isChecked();
+	conf->preview_async_video_send = ui->preview_async_video_send_checkbox->isChecked();
 
 	conf->Save();
 
@@ -69,9 +76,17 @@ void OutputSettings::showEvent(QShowEvent* event) {
 
 	ui->mainOutputGroupBox->setChecked(conf->OutputEnabled);
 	ui->mainOutputName->setText(conf->OutputName);
+	ui->main_synthesise_video_timestamps_checkbox->setChecked(conf->main_synthesise_video_timestamps);
+	ui->main_synthesise_audio_timestamps_checkbox->setChecked(conf->main_synthesise_audio_timestamps);
+	ui->main_async_video_send_checkbox->setChecked(conf->main_async_video_send);
 
 	ui->previewOutputGroupBox->setChecked(conf->PreviewOutputEnabled);
 	ui->previewOutputName->setText(conf->PreviewOutputName);
+	ui->preview_synthesise_video_timestamps_checkbox->setChecked(conf->preview_synthesise_video_timestamps);
+	ui->preview_synthesise_audio_timestamps_checkbox->setChecked(conf->preview_synthesise_audio_timestamps);
+	ui->preview_async_video_send_checkbox->setChecked(conf->preview_async_video_send);
+	conf->PreviewOutputEnabled = ui->previewOutputGroupBox->isChecked();
+	conf->PreviewOutputName = ui->previewOutputName->text();
 }
 
 void OutputSettings::ToggleShowHide() {

@@ -20,6 +20,7 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 #define CONFIG_H
 
 #include <QString>
+#include <QCheckBox>
 #include <obs-module.h>
 
 class Config {
@@ -32,9 +33,21 @@ class Config {
 	void Save();
 
 	bool OutputEnabled;
+	bool main_synthesise_video_timestamps;
+	bool main_synthesise_audio_timestamps;
+	bool main_async_video_send;
 	QString OutputName;
+	QCheckBox main_synthesise_video_timestamps_checkbox;
+	QCheckBox main_synthesise_audio_timestamps_checkbox;
+	QCheckBox main_async_video_send_checkbox;
 	QString PreviewOutputName;
+	QCheckBox preview_synthesise_video_timestamps_checkbox;
+	QCheckBox preview_synthesise_audio_timestamps_checkbox;
+	QCheckBox preview_async_video_send_checkbox;
 	bool PreviewOutputEnabled;
+	bool preview_synthesise_video_timestamps;
+	bool preview_synthesise_audio_timestamps;
+	bool preview_async_video_send;
 
   private:
 	static Config* _instance;
