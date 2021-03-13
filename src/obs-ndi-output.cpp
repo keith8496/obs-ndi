@@ -349,8 +349,10 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	NDIlib_video_frame_v2_t video_frame = {0};
 	video_frame.xres = width;
 	video_frame.yres = height;
-	video_frame.frame_rate_N = get_frame_rate_N(o->video_framerate);
-	video_frame.frame_rate_D = get_frame_rate_D(o->video_framerate);
+	video_frame.frame_rate_N = (int)(o->video_framerate * 100);
+	video_frame.frame_rate_D = 100; // TODO fixme: broken on fractional framerates
+//	video_frame.frame_rate_N = get_frame_rate_N(o->video_framerate);
+//	video_frame.frame_rate_D = get_frame_rate_D(o->video_framerate);
 	video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
 	
 	if (o->synthesise_video_timestamps) {

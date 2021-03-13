@@ -497,17 +497,6 @@ void* ndi_source_poll_audio(void* data)
 void ndi_source_update(void* data, obs_data_t* settings)
 {
 	auto s = (struct ndi_source*)data;
-	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
-	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
-
-	s->ndi_name = obs_source_get_name(s->source);
-
-	if (s->use_frame_syncer) {
-		blog(LOG_INFO, "'%s': using frame syncer", s->ndi_name);
-	}
-	if (s->do_tally) {
-		blog(LOG_INFO, "'%s': will set tallys", s->ndi_name);
-	}
 
 	if(s->running) {
 		s->running = false;
@@ -610,6 +599,18 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		blog(LOG_ERROR,
 			"can't create a receiver for NDI source '%s'",
 			recv_desc.source_to_connect_to.p_ndi_name);
+	}
+	
+	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
+	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
+
+	s->ndi_name = obs_source_get_name(s->source);
+
+	if (s->use_frame_syncer) {
+		blog(LOG_INFO, "'%s': using frame syncer", s->ndi_name);
+	}
+	if (s->do_tally) {
+		blog(LOG_INFO, "'%s': will set tallys", s->ndi_name);
 	}
 }
 
