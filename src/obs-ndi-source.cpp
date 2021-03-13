@@ -651,25 +651,26 @@ void ndi_source_video_tick(void *data, float seconds)
 	NDIlib_video_frame_v2_t video_frame;
 	obs_source_frame obs_video_frame = {0};
 
-	ndiLib->framesync_capture_video(
-		s->ndi_framesync,
-		&video_frame,
-		NDIlib_frame_format_type_progressive);
-
         if (s->last_audio_ts == 0) { // some guessing
         	s->last_audio_ts = os_gettime_ns() - (seconds*1000000000ul);
         	s->audio_samples_per_sec = 48000;
         }
 
-	uint64_t cached_ns = os_gettime_ns();
-	double time_elapsed = (cached_ns - s->last_audio_ts) / (double)1000000000ul;
-
         ndiLib->framesync_capture_audio(
         	s->ndi_framesync,
                 &audio_frame,
-                0, 0, int(s->audio_samples_per_sec*time_elapsed));
+                0, 0, int(s->audio_samples_per_sec*seconds));
+
+	uint64_t cached_ns = os_gettime_ns();
+//	double time_elapsed = (cached_ns - s->last_audio_ts) / (double)1000000000ul;
+
 	s->last_audio_ts = cached_ns;
-	obs_audio_frame.timestamp = cached_ns;
+
+
+	ndiLib->framesync_capture_video(
+		s->ndi_framesync,
+		&video_frame,
+		NDIlib_frame_format_type_progressive);
 
 	int channelCount = (int)fmin(8, audio_frame.no_channels);
 	obs_audio_frame.speakers = channel_count_to_layout(channelCount);
