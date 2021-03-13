@@ -121,6 +121,10 @@ void ndi_output_getdefaults(obs_data_t* settings)
 								"ndi_name", "obs-ndi output (changeme)");
 	obs_data_set_default_bool(settings, "uses_video", true);
 	obs_data_set_default_bool(settings, "uses_audio", true);
+	
+	obs_data_set_bool(settings, SYNTHESISE_VIDEO_TIMESTAMPS, true);
+	obs_data_set_bool(settings, SYNTHESISE_AUDIO_TIMESTAMPS, true);
+	obs_data_set_bool(settings, ASYNC_VIDEO_SEND, true);
 }
 
 bool ndi_output_start(void* data)
@@ -136,6 +140,16 @@ bool ndi_output_start(void* data)
 		return false;
 	}
 
+	if (o->synthesise_video_timestamps) {
+		blog(LOG_INFO, "'%s': synthesise video timestamps", o->ndi_name);
+	}
+	if (o->synthesise_audio_timestamps) {
+		blog(LOG_INFO, "'%s': synthesise audio timestamps", o->ndi_name);
+	}
+	if (o->async_video_send) {
+		blog(LOG_INFO, "'%s': async video send", o->ndi_name);
+	}
+	
 	if (o->uses_video && video) {
 		video_format format = video_output_get_format(video);
 		uint32_t width = video_output_get_width(video);

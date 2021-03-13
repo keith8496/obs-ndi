@@ -78,6 +78,8 @@ struct ndi_source
        	uint64_t last_audio_ts;
        	int audio_samples_per_sec;
        	bool use_frame_syncer;
+       	
+	const char* ndi_name;
 };
 
 static obs_source_t* find_filter_by_id(obs_source_t* context, const char* id)
@@ -258,7 +260,11 @@ obs_properties_t* ndi_source_getproperties(void* data)
 	obs_property_list_add_int(sync_modes,
 		obs_module_text("NDIPlugin.SyncMode.NDISourceTimecode"),
 		PROP_SYNC_NDI_SOURCE_TIMECODE);
-
+		//PROP_SYNC_INTERNAL
+	obs_property_list_add_int(sync_modes,
+		obs_module_text("NDIPlugin.SyncMode.Internal"),
+		PROP_SYNC_INTERNAL);
+		
 	obs_properties_add_bool(props, PROP_HW_ACCEL,
 		obs_module_text("NDIPlugin.SourceProps.HWAccel"));
 		
@@ -367,6 +373,9 @@ void* ndi_source_poll_audio_video(void* data)
 					obs_audio_frame.timestamp =
 						(uint64_t)(audio_frame.timecode * 100);
 					break;
+				default:
+					obs_audio_frame.timestamp = os_gettime_ns();
+					break;
 			}
 
 			obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
@@ -425,6 +434,9 @@ void* ndi_source_poll_audio_video(void* data)
 					obs_video_frame.timestamp =
 						(uint64_t)(video_frame.timecode * 100);
 					break;
+				default:
+					obs_video_frame.timestamp = os_gettime_ns();
+					break;
 			}
 
 			obs_video_frame.width = video_frame.xres;
@@ -455,6 +467,14 @@ void ndi_source_update(void* data, obs_data_t* settings)
 	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
 	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
 
+	s->ndi_name = obs_source_get_name(s->source);
+
+	if (s->use_frame_syncer) {
+		blog(LOG_INFO, "'%s': using frame syncer", s->ndi_name);
+	}
+	if (s->do_tally) {
+		blog(LOG_INFO, "'%s': will set tallys", s->ndi_name);
+	}
 
 	if(s->running) {
 		s->running = false;
@@ -507,10 +527,10 @@ void ndi_source_update(void* data, obs_data_t* settings)
 	s->sync_mode = (int)obs_data_get_int(settings, PROP_SYNC);
 	// if sync mode is set to the unsupported "Internal" mode, set it
 	// to "Source Timing" mode and apply that change to the settings data
-	if (s->sync_mode == PROP_SYNC_INTERNAL) {
+/*	if (s->sync_mode == PROP_SYNC_INTERNAL) {
 		s->sync_mode = PROP_SYNC_NDI_SOURCE_TIMECODE;
 		obs_data_set_int(settings, PROP_SYNC, PROP_SYNC_NDI_SOURCE_TIMECODE);
-	}
+	}*/
 
 	s->yuv_range =
 		prop_to_range_type((int)obs_data_get_int(settings, PROP_YUV_RANGE));
@@ -663,6 +683,9 @@ void ndi_source_video_tick(void *data, float seconds)
 			obs_audio_frame.timestamp =
 				(uint64_t)(audio_frame.timecode * 100);
 			break;
+		default:
+			obs_audio_frame.timestamp = os_gettime_ns();
+			break;
 	}
 	obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
 	s->audio_samples_per_sec = audio_frame.sample_rate;
@@ -728,6 +751,8 @@ void ndi_source_video_tick(void *data, float seconds)
 					obs_video_frame.timestamp =
 						(uint64_t)(video_frame.timecode * 100);
 					break;
+				default:
+					obs_video_frame.timestamp = os_gettime_ns();
 			}
 
 			obs_video_frame.width = video_frame.xres;
@@ -751,8 +776,8 @@ struct obs_source_info create_ndi_source_info()
 	ndi_source_info.output_flags	= OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO |
 									  OBS_SOURCE_DO_NOT_DUPLICATE;
 	ndi_source_info.get_name		= ndi_source_getname;
-	ndi_source_info.get_properties	= ndi_source_getproperties;
-	ndi_source_info.get_defaults	= ndi_source_getdefaults;
+	ndi_source_info.get_properties		= ndi_source_getproperties;
+	ndi_source_info.get_defaults		= ndi_source_getdefaults;
 	ndi_source_info.update			= ndi_source_update;
 	ndi_source_info.show			= ndi_source_shown;
 	ndi_source_info.hide			= ndi_source_hidden;
