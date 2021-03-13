@@ -76,7 +76,6 @@ struct ndi_source
         bool init_done;
        	NDIlib_framesync_instance_t ndi_framesync;
        	bool do_tally;
-       	uint64_t last_audio_ts;
        	int audio_samples_per_sec;
        	bool use_frame_syncer;
        	
@@ -507,6 +506,18 @@ void ndi_source_update(void* data, obs_data_t* settings)
         ndiLib->framesync_destroy(s->ndi_framesync);
 	ndiLib->recv_destroy(s->ndi_receiver);
 
+	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
+	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
+
+	s->ndi_name = obs_source_get_name(s->source);
+
+	if (s->use_frame_syncer) {
+		blog(LOG_INFO, "'%s': using frame syncer", s->ndi_name);
+	}
+	if (s->do_tally) {
+		blog(LOG_INFO, "'%s': will set tallys", s->ndi_name);
+	}
+
 	bool hwAccelEnabled = obs_data_get_bool(settings, PROP_HW_ACCEL);
 
 	s->alpha_filter_enabled =
@@ -579,8 +590,8 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		s->running = true;
 		
 		if (!s->use_frame_syncer) {
-			pthread_create(&s->a_thread, nullptr, ndi_source_poll_video, data);
-			pthread_create(&s->v_thread, nullptr, ndi_source_poll_audio, data);
+			pthread_create(&s->a_thread, nullptr, ndi_source_poll_audio, data);
+			pthread_create(&s->v_thread, nullptr, ndi_source_poll_video, data);
 		} else {
 			s->ndi_framesync = ndiLib->framesync_create(s->ndi_receiver);
 		}
@@ -599,18 +610,6 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		blog(LOG_ERROR,
 			"can't create a receiver for NDI source '%s'",
 			recv_desc.source_to_connect_to.p_ndi_name);
-	}
-	
-	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
-	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
-
-	s->ndi_name = obs_source_get_name(s->source);
-
-	if (s->use_frame_syncer) {
-		blog(LOG_INFO, "'%s': using frame syncer", s->ndi_name);
-	}
-	if (s->do_tally) {
-		blog(LOG_INFO, "'%s': will set tallys", s->ndi_name);
 	}
 }
 
@@ -688,8 +687,7 @@ void ndi_source_video_tick(void *data, float seconds)
 	NDIlib_video_frame_v2_t video_frame;
 	obs_source_frame obs_video_frame = {0};
 
-        if (s->last_audio_ts == 0) { // some guessing
-        	s->last_audio_ts = os_gettime_ns() - (seconds*1000000000ul);
+        if (s->audio_samples_per_sec == 0) { // some guessing
         	s->audio_samples_per_sec = 48000;
         }
 
@@ -697,12 +695,6 @@ void ndi_source_video_tick(void *data, float seconds)
         	s->ndi_framesync,
                 &audio_frame,
                 0, 0, int(s->audio_samples_per_sec*seconds));
-
-	uint64_t cached_ns = os_gettime_ns();
-//	double time_elapsed = (cached_ns - s->last_audio_ts) / (double)1000000000ul;
-
-	s->last_audio_ts = cached_ns;
-
 
 	ndiLib->framesync_capture_video(
 		s->ndi_framesync,
