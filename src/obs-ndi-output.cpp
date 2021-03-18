@@ -21,8 +21,20 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 #include <util/threading.h>
 #include <util/profiler.h>
 #include <util/circlebuf.h>
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QLibrary>
+#include <QMainWindow>
+#include <QAction>
+#include <QMessageBox>
+#include <QString>
+#include <QStringList>
 
 #include "obs-ndi.h"
+
+extern NDIlib_find_instance_t ndi_finder;
+const NDIlib_v4* load_ndilib_output(void*);
 
 static FORCE_INLINE uint32_t min_uint32(uint32_t a, uint32_t b)
 {
@@ -90,6 +102,9 @@ struct ndi_output
 	bool synthesise_video_timestamps;
 	bool synthesise_audio_timestamps;
 	bool async_video_send;
+	
+	const NDIlib_v4* ndiLib;
+	QLibrary* loaded_lib;
 };
 
 const char* ndi_output_getname(void* data)
@@ -206,7 +221,7 @@ bool ndi_output_start(void* data)
 	send_desc.clock_video = false;
 	send_desc.clock_audio = false;
 
-	o->ndi_sender = ndiLib->send_create(&send_desc);
+	o->ndi_sender = o->ndiLib->send_create(&send_desc);
 	if (o->ndi_sender) {
 		if (o->perf_token) {
 			os_end_high_performance(o->perf_token);
@@ -236,7 +251,7 @@ void ndi_output_stop(void* data, uint64_t ts)
 	os_end_high_performance(o->perf_token);
 	o->perf_token = NULL;
 
-	ndiLib->send_destroy(o->ndi_sender);
+	o->ndiLib->send_destroy(o->ndi_sender);
 	if (o->conv_buffer) {
 		delete o->conv_buffer;
 		o->conv_function = nullptr;
@@ -264,6 +279,7 @@ void ndi_output_update(void* data, obs_data_t* settings)
 void* ndi_output_create(obs_data_t* settings, obs_output_t* output)
 {
 	auto o = (struct ndi_output*)bzalloc(sizeof(struct ndi_output));
+	o->ndiLib = load_ndilib_output(o);
 	o->output = output;
 	o->started = false;
 	o->audio_conv_buffer = nullptr;
@@ -278,6 +294,15 @@ void ndi_output_destroy(void* data)
 	auto o = (struct ndi_output*)data;
 	if (o->audio_conv_buffer) {
 		bfree(o->audio_conv_buffer);
+	}
+	
+	if (o->ndiLib) {
+		o->ndiLib->find_destroy(ndi_finder);
+		o->ndiLib->destroy();
+	}
+
+	if (o->loaded_lib) {
+		delete o->loaded_lib;
 	}
 	bfree(o);
 }
@@ -375,9 +400,9 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	}
 
 	if (o->async_video_send) {
-		ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
+		o->ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
 	} else {
-		ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
+		o->ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
 	}
 }
 
@@ -419,7 +444,7 @@ void ndi_output_rawaudio(void* data, struct audio_data* frame)
 		audio_frame.timecode = (int64_t)(frame->timestamp / 100);
 	}
 
-	ndiLib->send_send_audio_v3(o->ndi_sender, &audio_frame);
+	o->ndiLib->send_send_audio_v3(o->ndi_sender, &audio_frame);
 }
 
 struct obs_output_info create_ndi_output_info()
@@ -439,4 +464,50 @@ struct obs_output_info create_ndi_output_info()
 	ndi_output_info.raw_audio		= ndi_output_rawaudio;
 
 	return ndi_output_info;
+}
+
+typedef const NDIlib_v4* (*NDIlib_v4_load_)(void);
+
+const NDIlib_v4* load_ndilib_output(void* data)
+{
+	auto s = (struct ndi_output*)data;
+	QStringList locations;
+	locations << QString(qgetenv(NDILIB_REDIST_FOLDER));
+#if defined(__linux__) || defined(__APPLE__)
+	locations << "/usr/lib";
+	locations << "/usr/local/lib";
+#endif
+
+	for (QString path : locations) {
+		blog(LOG_INFO, "Trying '%s'", path.toUtf8().constData());
+		QFileInfo libPath(QDir(path).absoluteFilePath(NDILIB_LIBRARY_NAME));
+
+		if (libPath.exists() && libPath.isFile()) {
+			QString libFilePath = libPath.absoluteFilePath();
+			blog(LOG_INFO, "Found NDI library at '%s'",
+				libFilePath.toUtf8().constData());
+
+			s->loaded_lib = new QLibrary(libFilePath, nullptr);
+			if (s->loaded_lib->load()) {
+				blog(LOG_INFO, "NDI runtime loaded successfully");
+
+				NDIlib_v4_load_ lib_load =
+					(NDIlib_v4_load_)s->loaded_lib->resolve("NDIlib_v4_load");
+
+				if (lib_load != nullptr) {
+					return lib_load();
+				}
+				else {
+					blog(LOG_INFO, "ERROR: NDIlib_v4_load not found in loaded library");
+				}
+			}
+			else {
+				delete s->loaded_lib;
+				s->loaded_lib = nullptr;
+			}
+		}
+	}
+
+	blog(LOG_ERROR, "Can't find the NDI library");
+	return nullptr;
 }

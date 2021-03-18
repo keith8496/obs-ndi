@@ -26,6 +26,15 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QLibrary>
+#include <QMainWindow>
+#include <QAction>
+#include <QMessageBox>
+#include <QString>
+#include <QStringList>
 
 #include "obs-ndi.h"
 
@@ -60,6 +69,8 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 
 extern NDIlib_find_instance_t ndi_finder;
 
+const NDIlib_v4* load_ndilib(void*);
+
 struct ndi_source
 {
 	obs_source_t* source;
@@ -80,6 +91,8 @@ struct ndi_source
        	bool use_frame_syncer;
        	
 	const char* ndi_name;
+	const NDIlib_v4* ndiLib;
+	QLibrary* loaded_lib;
 };
 
 static obs_source_t* find_filter_by_id(obs_source_t* context, const char* id)
@@ -211,7 +224,7 @@ obs_properties_t* ndi_source_getproperties(void* data)
 		OBS_COMBO_FORMAT_STRING);
 
 	uint32_t nbSources = 0;
-	const NDIlib_source_t* sources = ndiLib->find_get_current_sources(ndi_finder,
+	const NDIlib_source_t* sources = s->ndiLib->find_get_current_sources(ndi_finder,
 		&nbSources);
 
 	for (uint32_t i = 0; i < nbSources; ++i) {
@@ -354,7 +367,7 @@ void* ndi_source_poll_video(void* data)
 			continue;
 		}
 
-		frame_received = ndiLib->recv_capture_v2(
+		frame_received = s->ndiLib->recv_capture_v2(
 			s->ndi_receiver, &video_frame, nullptr, nullptr, 100);
 
 		if (frame_received == NDIlib_frame_type_video && video_frame.xres > 0 && video_frame.yres > 0) {
@@ -449,7 +462,7 @@ void* ndi_source_poll_audio(void* data)
 			continue;
 		}
 
-		frame_received = ndiLib->recv_capture_v2(
+		frame_received = s->ndiLib->recv_capture_v2(
 			s->ndi_receiver, nullptr, &audio_frame, nullptr, 100);
 
 		if (frame_received == NDIlib_frame_type_audio && audio_frame.sample_rate > 0 && audio_frame.p_data > 0) {
@@ -503,8 +516,8 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		pthread_join(s->a_thread, NULL);
 	}
 	s->running = false;
-        ndiLib->framesync_destroy(s->ndi_framesync);
-	ndiLib->recv_destroy(s->ndi_receiver);
+        s->ndiLib->framesync_destroy(s->ndi_framesync);
+	s->ndiLib->recv_destroy(s->ndi_receiver);
 
 	s->use_frame_syncer = obs_data_get_bool(settings, PROP_USE_FRAME_SYNCER);
 	s->do_tally = obs_data_get_bool(settings, PROP_DO_TALLY);
@@ -579,12 +592,12 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		obs_source_set_async_unbuffered(s->source, is_unbuffered);
 	}
 
-	s->ndi_receiver = ndiLib->recv_create_v3(&recv_desc);
+	s->ndi_receiver = s->ndiLib->recv_create_v3(&recv_desc);
 	if (s->ndi_receiver) {
 		if (hwAccelEnabled) {
 			NDIlib_metadata_frame_t hwAccelMetadata;
 			hwAccelMetadata.p_data = (char*)"<ndi_hwaccel enabled=\"true\"/>";
-			ndiLib->recv_send_metadata(s->ndi_receiver, &hwAccelMetadata);
+			s->ndiLib->recv_send_metadata(s->ndi_receiver, &hwAccelMetadata);
 		}
 
 		s->running = true;
@@ -593,7 +606,7 @@ void ndi_source_update(void* data, obs_data_t* settings)
 			pthread_create(&s->a_thread, nullptr, ndi_source_poll_audio, data);
 			pthread_create(&s->v_thread, nullptr, ndi_source_poll_video, data);
 		} else {
-			s->ndi_framesync = ndiLib->framesync_create(s->ndi_receiver);
+			s->ndi_framesync = s->ndiLib->framesync_create(s->ndi_receiver);
 		}
 
 		blog(LOG_INFO, "started A/V threads for source '%s'",
@@ -603,7 +616,7 @@ void ndi_source_update(void* data, obs_data_t* settings)
 		if (s->do_tally) {
 			s->tally.on_preview = obs_source_showing(s->source);
 			s->tally.on_program = obs_source_active(s->source);
-			ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+			s->ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
 		}
 		
 	} else {
@@ -619,7 +632,7 @@ void ndi_source_shown(void* data)
 
 	if (s->ndi_receiver && s->do_tally) {
 		s->tally.on_preview = true;
-		ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+		s->ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
 	}
 }
 
@@ -629,7 +642,7 @@ void ndi_source_hidden(void* data)
 
 	if (s->ndi_receiver && s->do_tally) {
 		s->tally.on_preview = false;
-		ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+		s->ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
 	}
 }
 
@@ -639,7 +652,7 @@ void ndi_source_activated(void* data)
 
 	if (s->ndi_receiver && s->do_tally) {
 		s->tally.on_program = true;
-		ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+		s->ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
 	}
 }
 
@@ -649,13 +662,14 @@ void ndi_source_deactivated(void* data)
 
 	if (s->ndi_receiver && s->do_tally) {
 		s->tally.on_program = false;
-		ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
+		s->ndiLib->recv_set_tally(s->ndi_receiver, &s->tally);
 	}
 }
 
 void* ndi_source_create(obs_data_t* settings, obs_source_t* source)
 {
 	auto s = (struct ndi_source*)bzalloc(sizeof(struct ndi_source));
+	s->ndiLib = load_ndilib(s);
 	s->source = source;
 	s->running = false;
 	s->perf_token = NULL;
@@ -669,8 +683,16 @@ void ndi_source_destroy(void* data)
 	s->running = false;
 	pthread_join(s->a_thread, NULL);
 	pthread_join(s->v_thread, NULL);
-	ndiLib->framesync_destroy(s->ndi_framesync);
-	ndiLib->recv_destroy(s->ndi_receiver);
+	s->ndiLib->framesync_destroy(s->ndi_framesync);
+	s->ndiLib->recv_destroy(s->ndi_receiver);
+	if (s->ndiLib) {
+		s->ndiLib->find_destroy(ndi_finder);
+		s->ndiLib->destroy();
+	}
+
+	if (s->loaded_lib) {
+		delete s->loaded_lib;
+	}
 	bfree(s);
 }
 
@@ -691,12 +713,12 @@ void ndi_source_video_tick(void *data, float seconds)
         	s->audio_samples_per_sec = 48000;
         }
 
-        ndiLib->framesync_capture_audio(
+        s->ndiLib->framesync_capture_audio(
         	s->ndi_framesync,
                 &audio_frame,
                 0, 0, int(s->audio_samples_per_sec*seconds));
 
-	ndiLib->framesync_capture_video(
+	s->ndiLib->framesync_capture_video(
 		s->ndi_framesync,
 		&video_frame,
 		NDIlib_frame_format_type_progressive);
@@ -728,7 +750,7 @@ void ndi_source_video_tick(void *data, float seconds)
 	}
 
 	obs_source_output_audio(s->source, &obs_audio_frame);
-	ndiLib->framesync_free_audio(s->ndi_framesync, &audio_frame);
+	s->ndiLib->framesync_free_audio(s->ndi_framesync, &audio_frame);
 
 
 // ######### START OF VIDEO
@@ -765,7 +787,7 @@ void ndi_source_video_tick(void *data, float seconds)
 
 				default:
 					//blog(LOG_INFO, "warning: unsupported video pixel format: %d", video_frame.FourCC);
-					ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
+					s->ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
 					return;
 					break;
 			}
@@ -795,7 +817,7 @@ void ndi_source_video_tick(void *data, float seconds)
 				obs_video_frame.color_range_max);
 
 			obs_source_output_video(s->source, &obs_video_frame);
-			ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
+			s->ndiLib->framesync_free_video(s->ndi_framesync, &video_frame);
 }
 
 struct obs_source_info create_ndi_source_info()
@@ -818,4 +840,50 @@ struct obs_source_info create_ndi_source_info()
         ndi_source_info.video_tick		= ndi_source_video_tick;
 
 	return ndi_source_info;
+}
+
+typedef const NDIlib_v4* (*NDIlib_v4_load_)(void);
+
+const NDIlib_v4* load_ndilib(void* data)
+{
+	auto s = (struct ndi_source*)data;
+	QStringList locations;
+	locations << QString(qgetenv(NDILIB_REDIST_FOLDER));
+#if defined(__linux__) || defined(__APPLE__)
+	locations << "/usr/lib";
+	locations << "/usr/local/lib";
+#endif
+
+	for (QString path : locations) {
+		blog(LOG_INFO, "Trying '%s'", path.toUtf8().constData());
+		QFileInfo libPath(QDir(path).absoluteFilePath(NDILIB_LIBRARY_NAME));
+
+		if (libPath.exists() && libPath.isFile()) {
+			QString libFilePath = libPath.absoluteFilePath();
+			blog(LOG_INFO, "Found NDI library at '%s'",
+				libFilePath.toUtf8().constData());
+
+			s->loaded_lib = new QLibrary(libFilePath, nullptr);
+			if (s->loaded_lib->load()) {
+				blog(LOG_INFO, "NDI runtime loaded successfully");
+
+				NDIlib_v4_load_ lib_load =
+					(NDIlib_v4_load_)s->loaded_lib->resolve("NDIlib_v4_load");
+
+				if (lib_load != nullptr) {
+					return lib_load();
+				}
+				else {
+					blog(LOG_INFO, "ERROR: NDIlib_v4_load not found in loaded library");
+				}
+			}
+			else {
+				delete s->loaded_lib;
+				s->loaded_lib = nullptr;
+			}
+		}
+	}
+
+	blog(LOG_ERROR, "Can't find the NDI library");
+	return nullptr;
 }
