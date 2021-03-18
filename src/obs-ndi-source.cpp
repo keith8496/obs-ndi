@@ -67,8 +67,6 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 #define PROP_LATENCY_NORMAL 0
 #define PROP_LATENCY_LOW 1
 
-extern NDIlib_find_instance_t ndi_finder;
-
 const NDIlib_v4* load_ndilib(void*);
 
 struct ndi_source
@@ -93,6 +91,7 @@ struct ndi_source
 	const char* ndi_name;
 	const NDIlib_v4* ndiLib;
 	QLibrary* loaded_lib;
+	NDIlib_find_instance_t ndi_finder;
 };
 
 static obs_source_t* find_filter_by_id(obs_source_t* context, const char* id)
@@ -224,7 +223,7 @@ obs_properties_t* ndi_source_getproperties(void* data)
 		OBS_COMBO_FORMAT_STRING);
 
 	uint32_t nbSources = 0;
-	const NDIlib_source_t* sources = s->ndiLib->find_get_current_sources(ndi_finder,
+	const NDIlib_source_t* sources = s->ndiLib->find_get_current_sources(s->ndi_finder,
 		&nbSources);
 
 	for (uint32_t i = 0; i < nbSources; ++i) {
@@ -686,7 +685,7 @@ void ndi_source_destroy(void* data)
 	s->ndiLib->framesync_destroy(s->ndi_framesync);
 	s->ndiLib->recv_destroy(s->ndi_receiver);
 	if (s->ndiLib) {
-		s->ndiLib->find_destroy(ndi_finder);
+		s->ndiLib->find_destroy(s->ndi_finder);
 		s->ndiLib->destroy();
 	}
 

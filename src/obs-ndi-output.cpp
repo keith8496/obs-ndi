@@ -33,7 +33,6 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 
 #include "obs-ndi.h"
 
-extern NDIlib_find_instance_t ndi_finder;
 const NDIlib_v4* load_ndilib_output(void*);
 
 static FORCE_INLINE uint32_t min_uint32(uint32_t a, uint32_t b)
@@ -297,7 +296,6 @@ void ndi_output_destroy(void* data)
 	}
 	
 	if (o->ndiLib) {
-		o->ndiLib->find_destroy(ndi_finder);
 		o->ndiLib->destroy();
 	}
 
