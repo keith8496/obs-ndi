@@ -669,6 +669,10 @@ void* ndi_source_create(obs_data_t* settings, obs_source_t* source)
 {
 	auto s = (struct ndi_source*)bzalloc(sizeof(struct ndi_source));
 	s->ndiLib = load_ndilib(s);
+	NDIlib_find_create_t find_desc = {0};
+	find_desc.show_local_sources = true;
+	find_desc.p_groups = NULL;
+	s->ndi_finder = s->ndiLib->find_create_v2(&find_desc);
 	s->source = source;
 	s->running = false;
 	s->perf_token = NULL;
