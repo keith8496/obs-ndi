@@ -369,7 +369,7 @@ void* ndi_source_poll_video(void* data)
 		frame_received = s->ndiLib->recv_capture_v2(
 			s->ndi_receiver, &video_frame, nullptr, nullptr, 100);
 
-		if (frame_received == NDIlib_frame_type_video && video_frame.xres > 0 && video_frame.yres > 0) {
+		if (frame_received == NDIlib_frame_type_video && video_frame.xres > 0 && video_frame.yres > 0 && video_frame.p_data != nullptr) {
 			switch (video_frame.FourCC) {
 				case NDIlib_FourCC_type_BGRA:
 					obs_video_frame.format = VIDEO_FORMAT_BGRA;
@@ -413,9 +413,10 @@ void* ndi_source_poll_video(void* data)
 						(uint64_t)(video_frame.timecode * 100);
 					break;
 				default:
-					obs_video_frame.timestamp = os_gettime_ns();
+					obs_video_frame.timestamp = obs_get_video_frame_time();
 					break;
 			}
+			obs_video_frame.timestamp = obs_get_video_frame_time(); // TODO remove me
 
 			obs_video_frame.width = video_frame.xres;
 			obs_video_frame.height = video_frame.yres;
@@ -479,10 +480,10 @@ void* ndi_source_poll_audio(void* data)
 						(uint64_t)(audio_frame.timecode * 100);
 					break;
 				default:
-					obs_audio_frame.timestamp = os_gettime_ns();
+					obs_audio_frame.timestamp = obs_get_video_frame_time();
 					break;
 			}
-
+			obs_audio_frame.timestamp = obs_get_video_frame_time(); // TODO remove me
 			obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
 			obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
 			obs_audio_frame.frames = audio_frame.no_samples;
