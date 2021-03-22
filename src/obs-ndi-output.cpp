@@ -216,7 +216,7 @@ bool ndi_output_start(void* data)
 
 	NDIlib_send_create_t send_desc;
 	send_desc.p_ndi_name = o->ndi_name;
-	send_desc.p_groups = nullptr;
+	send_desc.p_groups = o->ndi_name;
 	send_desc.clock_video = false;
 	send_desc.clock_audio = false;
 
@@ -381,7 +381,7 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	if (o->synthesise_video_timestamps) {
 		video_frame.timecode = NDIlib_send_timecode_synthesize;
 	} else {
-		video_frame.timecode = (int64_t)(frame->timestamp / 100);
+		video_frame.timecode = (int64_t)(obs_get_video_frame_time() / 100);
 	}
 	video_frame.FourCC = o->frame_fourcc;
 

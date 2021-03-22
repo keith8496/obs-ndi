@@ -416,7 +416,6 @@ void* ndi_source_poll_video(void* data)
 					obs_video_frame.timestamp = obs_get_video_frame_time();
 					break;
 			}
-			obs_video_frame.timestamp = obs_get_video_frame_time(); // TODO remove me
 
 			obs_video_frame.width = video_frame.xres;
 			obs_video_frame.height = video_frame.yres;
@@ -483,7 +482,6 @@ void* ndi_source_poll_audio(void* data)
 					obs_audio_frame.timestamp = obs_get_video_frame_time();
 					break;
 			}
-			obs_audio_frame.timestamp = obs_get_video_frame_time(); // TODO remove me
 			obs_audio_frame.samples_per_sec = audio_frame.sample_rate;
 			obs_audio_frame.format = AUDIO_FORMAT_FLOAT_PLANAR;
 			obs_audio_frame.frames = audio_frame.no_samples;
@@ -584,13 +582,13 @@ void ndi_source_update(void* data, obs_data_t* settings)
 	s->yuv_colorspace =
 		prop_to_colorspace((int)obs_data_get_int(settings, PROP_YUV_COLORSPACE));
 
-	if (s->use_frame_syncer) {
+/*	if (s->use_frame_syncer) {
 			obs_source_set_async_unbuffered(s->source, true);	
-	} else {
+	} else {*/
 		const bool is_unbuffered =
 			(obs_data_get_int(settings, PROP_LATENCY) == PROP_LATENCY_LOW);
 		obs_source_set_async_unbuffered(s->source, is_unbuffered);
-	}
+	//}
 
 	s->ndi_receiver = s->ndiLib->recv_create_v3(&recv_desc);
 	if (s->ndi_receiver) {
