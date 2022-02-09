@@ -21,8 +21,19 @@ along with this program; If not, see <https://www.gnu.org/licenses/>
 #include <util/threading.h>
 #include <util/profiler.h>
 #include <util/circlebuf.h>
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QLibrary>
+#include <QMainWindow>
+#include <QAction>
+#include <QMessageBox>
+#include <QString>
+#include <QStringList>
 
 #include "obs-ndi.h"
+
+const NDIlib_v4* load_ndilib_output(void*);
 
 static FORCE_INLINE uint32_t min_uint32(uint32_t a, uint32_t b)
 {
@@ -63,6 +74,7 @@ struct ndi_output
 {
 	obs_output_t *output;
 	const char* ndi_name;
+	
 	bool uses_video;
 	bool uses_audio;
 
@@ -85,6 +97,13 @@ struct ndi_output
 	size_t audio_conv_buffer_size;
 
 	os_performance_token_t* perf_token;
+	
+	bool synthesise_video_timestamps;
+	bool synthesise_audio_timestamps;
+	bool async_video_send;
+	
+	const NDIlib_v4* ndiLib;
+	QLibrary* loaded_lib;
 };
 
 const char* ndi_output_getname(void* data)
@@ -102,6 +121,10 @@ obs_properties_t* ndi_output_getproperties(void* data)
 
 	obs_properties_add_text(props, "ndi_name",
 		obs_module_text("NDIPlugin.OutputProps.NDIName"), OBS_TEXT_DEFAULT);
+	obs_properties_add_bool(props, SYNTHESISE_VIDEO_TIMESTAMPS,
+		"Synthesise Video Timecode");
+	obs_properties_add_bool(props, SYNTHESISE_AUDIO_TIMESTAMPS,
+		"Synthesise Audio Timecode");
 
 	return props;
 }
@@ -112,6 +135,10 @@ void ndi_output_getdefaults(obs_data_t* settings)
 								"ndi_name", "obs-ndi output (changeme)");
 	obs_data_set_default_bool(settings, "uses_video", true);
 	obs_data_set_default_bool(settings, "uses_audio", true);
+	
+	obs_data_set_bool(settings, SYNTHESISE_VIDEO_TIMESTAMPS, true);
+	obs_data_set_bool(settings, SYNTHESISE_AUDIO_TIMESTAMPS, true);
+	obs_data_set_bool(settings, ASYNC_VIDEO_SEND, true);
 }
 
 bool ndi_output_start(void* data)
@@ -127,6 +154,16 @@ bool ndi_output_start(void* data)
 		return false;
 	}
 
+	if (o->synthesise_video_timestamps) {
+		blog(LOG_INFO, "'%s': synthesise video timestamps", o->ndi_name);
+	}
+	if (o->synthesise_audio_timestamps) {
+		blog(LOG_INFO, "'%s': synthesise audio timestamps", o->ndi_name);
+	}
+	if (o->async_video_send) {
+		blog(LOG_INFO, "'%s': async video send", o->ndi_name);
+	}
+	
 	if (o->uses_video && video) {
 		video_format format = video_output_get_format(video);
 		uint32_t width = video_output_get_width(video);
@@ -179,11 +216,11 @@ bool ndi_output_start(void* data)
 
 	NDIlib_send_create_t send_desc;
 	send_desc.p_ndi_name = o->ndi_name;
-	send_desc.p_groups = nullptr;
+	send_desc.p_groups = o->ndi_name;
 	send_desc.clock_video = false;
 	send_desc.clock_audio = false;
 
-	o->ndi_sender = ndiLib->send_create(&send_desc);
+	o->ndi_sender = o->ndiLib->send_create(&send_desc);
 	if (o->ndi_sender) {
 		if (o->perf_token) {
 			os_end_high_performance(o->perf_token);
@@ -213,7 +250,7 @@ void ndi_output_stop(void* data, uint64_t ts)
 	os_end_high_performance(o->perf_token);
 	o->perf_token = NULL;
 
-	ndiLib->send_destroy(o->ndi_sender);
+	o->ndiLib->send_destroy(o->ndi_sender);
 	if (o->conv_buffer) {
 		delete o->conv_buffer;
 		o->conv_function = nullptr;
@@ -233,11 +270,15 @@ void ndi_output_update(void* data, obs_data_t* settings)
 	o->ndi_name = obs_data_get_string(settings, "ndi_name");
 	o->uses_video = obs_data_get_bool(settings, "uses_video");
 	o->uses_audio = obs_data_get_bool(settings, "uses_audio");
+	o->synthesise_video_timestamps = obs_data_get_bool(settings, SYNTHESISE_VIDEO_TIMESTAMPS);
+	o->synthesise_audio_timestamps = obs_data_get_bool(settings, SYNTHESISE_AUDIO_TIMESTAMPS);
+	o->async_video_send = obs_data_get_bool(settings, ASYNC_VIDEO_SEND);
 }
 
 void* ndi_output_create(obs_data_t* settings, obs_output_t* output)
 {
 	auto o = (struct ndi_output*)bzalloc(sizeof(struct ndi_output));
+	o->ndiLib = load_ndilib_output(o);
 	o->output = output;
 	o->started = false;
 	o->audio_conv_buffer = nullptr;
@@ -253,7 +294,69 @@ void ndi_output_destroy(void* data)
 	if (o->audio_conv_buffer) {
 		bfree(o->audio_conv_buffer);
 	}
+	
+	if (o->ndiLib) {
+		o->ndiLib->destroy();
+	}
+
+	if (o->loaded_lib) {
+		delete o->loaded_lib;
+	}
 	bfree(o);
+}
+
+int inline get_frame_rate_N (double fr) 
+{
+	int fr_i = int(fr*100.0f); // only works for progressive (from NDI SDK docs)
+	
+	switch (fr_i) {
+		case 5994:
+			return 60000;
+		break;
+		case 5000:
+			return 30000;
+		break;
+		case 2500:
+			return 30000;
+		break;
+		case 3000:
+			return 30000;
+		break;
+		case 2400:
+			return 24000;
+		break;
+		default:
+			return 30000;
+		break;
+	
+	}
+}
+
+int inline get_frame_rate_D (double fr) 
+{
+	int fr_i = int(fr*100.0f); // only works for progressive (from NDI SDK docs)
+	
+	switch (fr_i) {
+		case 5994:
+			return 1001;
+		break;
+		case 5000:
+			return 1200;
+		break;
+		case 25000:
+			return 1200;
+		break;
+		case 3000:
+			return 1001;
+		break;
+		case 2400:
+			return 1001;
+		break;
+		default:
+			return 1001;
+		break;
+	
+	}
 }
 
 void ndi_output_rawvideo(void* data, struct video_data* frame)
@@ -271,8 +374,15 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 	video_frame.yres = height;
 	video_frame.frame_rate_N = (int)(o->video_framerate * 100);
 	video_frame.frame_rate_D = 100; // TODO fixme: broken on fractional framerates
+//	video_frame.frame_rate_N = get_frame_rate_N(o->video_framerate);
+//	video_frame.frame_rate_D = get_frame_rate_D(o->video_framerate);
 	video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
-	video_frame.timecode = (int64_t)(frame->timestamp / 100);
+	
+	if (o->synthesise_video_timestamps) {
+		video_frame.timecode = NDIlib_send_timecode_synthesize;
+	} else {
+		video_frame.timecode = (int64_t)(obs_get_video_frame_time() / 100);
+	}
 	video_frame.FourCC = o->frame_fourcc;
 
 	if (video_frame.FourCC == NDIlib_FourCC_type_UYVY) {
@@ -287,7 +397,11 @@ void ndi_output_rawvideo(void* data, struct video_data* frame)
 		video_frame.line_stride_in_bytes = frame->linesize[0];
 	}
 
-	ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
+	if (o->async_video_send) {
+		o->ndiLib->send_send_video_async_v2(o->ndi_sender, &video_frame);
+	} else {
+		o->ndiLib->send_send_video_v2(o->ndi_sender, &video_frame);
+	}
 }
 
 void ndi_output_rawaudio(void* data, struct audio_data* frame)
@@ -321,9 +435,14 @@ void ndi_output_rawaudio(void* data, struct audio_data* frame)
 	}
 
 	audio_frame.p_data = o->audio_conv_buffer;
-	audio_frame.timecode = NDIlib_send_timecode_synthesize;
 
-	ndiLib->send_send_audio_v3(o->ndi_sender, &audio_frame);
+	if (o->synthesise_audio_timestamps) {
+		audio_frame.timecode = NDIlib_send_timecode_synthesize;
+	} else {
+		audio_frame.timecode = (int64_t)(frame->timestamp / 100);
+	}
+
+	o->ndiLib->send_send_audio_v3(o->ndi_sender, &audio_frame);
 }
 
 struct obs_output_info create_ndi_output_info()
@@ -343,4 +462,50 @@ struct obs_output_info create_ndi_output_info()
 	ndi_output_info.raw_audio		= ndi_output_rawaudio;
 
 	return ndi_output_info;
+}
+
+typedef const NDIlib_v4* (*NDIlib_v4_load_)(void);
+
+const NDIlib_v4* load_ndilib_output(void* data)
+{
+	auto s = (struct ndi_output*)data;
+	QStringList locations;
+	locations << QString(qgetenv(NDILIB_REDIST_FOLDER));
+#if defined(__linux__) || defined(__APPLE__)
+	locations << "/usr/lib";
+	locations << "/usr/local/lib";
+#endif
+
+	for (QString path : locations) {
+		blog(LOG_INFO, "Trying '%s'", path.toUtf8().constData());
+		QFileInfo libPath(QDir(path).absoluteFilePath(NDILIB_LIBRARY_NAME));
+
+		if (libPath.exists() && libPath.isFile()) {
+			QString libFilePath = libPath.absoluteFilePath();
+			blog(LOG_INFO, "Found NDI library at '%s'",
+				libFilePath.toUtf8().constData());
+
+			s->loaded_lib = new QLibrary(libFilePath, nullptr);
+			if (s->loaded_lib->load()) {
+				blog(LOG_INFO, "NDI runtime loaded successfully");
+
+				NDIlib_v4_load_ lib_load =
+					(NDIlib_v4_load_)s->loaded_lib->resolve("NDIlib_v4_load");
+
+				if (lib_load != nullptr) {
+					return lib_load();
+				}
+				else {
+					blog(LOG_INFO, "ERROR: NDIlib_v4_load not found in loaded library");
+				}
+			}
+			else {
+				delete s->loaded_lib;
+				s->loaded_lib = nullptr;
+			}
+		}
+	}
+
+	blog(LOG_ERROR, "Can't find the NDI library");
+	return nullptr;
 }

@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>470</width>
-    <height>187</height>
+    <width>662</width>
+    <height>364</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -23,17 +23,69 @@
    <string>NDIPlugin.OutputSettings.DialogTitle</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
-   <item row="3" column="0">
-    <widget class="QDialogButtonBox" name="buttonBox">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
+   <item row="0" column="0">
+    <widget class="QGroupBox" name="mainOutputGroupBox">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
      </property>
-     <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     <property name="title">
+      <string>NDIPlugin.OutputSettings.GroupBox.Main</string>
      </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <layout class="QFormLayout" name="formLayout_3">
+      <item row="0" column="0" colspan="2">
+       <layout class="QFormLayout" name="formLayout_2">
+        <item row="0" column="0">
+         <widget class="QLabel" name="mainOutputNameLabel">
+          <property name="minimumSize">
+           <size>
+            <width>200</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>NDIPlugin.OutputSettings.Main.Name</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLineEdit" name="mainOutputName"/>
+        </item>
+        <item row="1" column="0">
+         <widget class="QCheckBox" name="main_synthesise_video_timestamps_checkbox">
+          <property name="text">
+           <string>Synthesise Video Timestamps</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QCheckBox" name="main_synthesise_audio_timestamps_checkbox">
+          <property name="text">
+           <string>Synthesise Audio Timestamps</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QCheckBox" name="main_async_video_send_checkbox">
+          <property name="text">
+           <string>Asynchronous Video Send</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
    </item>
-   <item row="2" column="0">
+   <item row="4" column="0">
     <widget class="QLabel" name="ndiVersionLabel">
      <property name="font">
       <font>
@@ -45,7 +97,17 @@
      </property>
     </widget>
    </item>
-   <item row="1" column="0">
+   <item row="5" column="0">
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
     <widget class="QGroupBox" name="previewOutputGroupBox">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -99,46 +161,26 @@
         <item row="0" column="1">
          <widget class="QLineEdit" name="previewOutputName"/>
         </item>
-       </layout>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item row="0" column="0">
-    <widget class="QGroupBox" name="mainOutputGroupBox">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="title">
-      <string>NDIPlugin.OutputSettings.GroupBox.Main</string>
-     </property>
-     <property name="checkable">
-      <bool>true</bool>
-     </property>
-     <property name="checked">
-      <bool>false</bool>
-     </property>
-     <layout class="QFormLayout" name="formLayout_3">
-      <item row="0" column="0" colspan="2">
-       <layout class="QFormLayout" name="formLayout_2">
-        <item row="0" column="0">
-         <widget class="QLabel" name="mainOutputNameLabel">
-          <property name="minimumSize">
-           <size>
-            <width>200</width>
-            <height>0</height>
-           </size>
-          </property>
+        <item row="1" column="0">
+         <widget class="QCheckBox" name="preview_synthesise_video_timestamps_checkbox">
           <property name="text">
-           <string>NDIPlugin.OutputSettings.Main.Name</string>
+           <string>Synthesise Video Timestamps</string>
           </property>
          </widget>
         </item>
-        <item row="0" column="1">
-         <widget class="QLineEdit" name="mainOutputName"/>
+        <item row="2" column="0">
+         <widget class="QCheckBox" name="preview_synthesise_audio_timestamps_checkbox">
+          <property name="text">
+           <string>Synthesise Audio Timestamps</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QCheckBox" name="preview_async_video_send_checkbox">
+          <property name="text">
+           <string>Asynchronous Video Send</string>
+          </property>
+         </widget>
         </item>
        </layout>
       </item>

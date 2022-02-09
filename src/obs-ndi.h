@@ -16,6 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program; If not, see <https://www.gnu.org/licenses/>
 */
 
+#define SYNTHESISE_VIDEO_TIMESTAMPS "synthesise_video_timestamps"
+#define SYNTHESISE_AUDIO_TIMESTAMPS "synthesise_audio_timestamps"
+#define ASYNC_VIDEO_SEND "async_video_send"
+
 #ifndef OBSNDI_H
 #define OBSNDI_H
 
