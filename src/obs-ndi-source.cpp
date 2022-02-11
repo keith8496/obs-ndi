@@ -178,8 +178,7 @@ obs_properties_t* ndi_source_getproperties(void* data)
 		OBS_COMBO_FORMAT_STRING);
 
 	uint32_t nbSources = 0;
-	const NDIlib_source_t* sources = ndiLib->find_get_current_sources(ndi_finder,
-		&nbSources);
+	const NDIlib_source_t* sources = ndiLib->find_get_current_sources(ndi_finder,&nbSources);
 
 	for (uint32_t i = 0; i < nbSources; ++i) {
 		obs_property_list_add_string(source_list,
