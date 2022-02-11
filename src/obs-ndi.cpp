@@ -1,17 +1,14 @@
 /*
 obs-ndi
 Copyright (C) 2016-2018 Stéphane Lepin <steph  name of author
-
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
 as published by the Free Software Foundation; either version 2
 of the License, or (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
-
 You should have received a copy of the GNU General Public License
 along with this program; If not, see <https://www.gnu.org/licenses/>
 */
@@ -45,7 +42,7 @@ OBS_DECLARE_MODULE()
 OBS_MODULE_AUTHOR("Stephane Lepin (Palakis)")
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-ndi", "en-US")
 
-const NDIlib_v4* ndiLib = nullptr;
+const NDIlib_v5* ndiLib = nullptr;
 
 extern struct obs_source_info create_ndi_source_info();
 struct obs_source_info ndi_source_info;
@@ -62,9 +59,9 @@ struct obs_source_info ndi_audiofilter_info;
 extern struct obs_source_info create_alpha_filter_info();
 struct obs_source_info alpha_filter_info;
 
-const NDIlib_v4* load_ndilib();
+const NDIlib_v5* load_ndilib();
 
-typedef const NDIlib_v4* (*NDIlib_v4_load_)(void);
+typedef const NDIlib_v5* (*NDIlib_v5_load_)(void);
 QLibrary* loaded_lib = nullptr;
 
 NDIlib_find_instance_t ndi_finder;
@@ -194,7 +191,7 @@ const char* obs_module_description()
 	return "NDI input/output integration for OBS Studio";
 }
 
-const NDIlib_v4* load_ndilib()
+const NDIlib_v5* load_ndilib()
 {
 	QStringList locations;
 	locations << QString(qgetenv(NDILIB_REDIST_FOLDER));
@@ -216,14 +213,14 @@ const NDIlib_v4* load_ndilib()
 			if (loaded_lib->load()) {
 				blog(LOG_INFO, "NDI runtime loaded successfully");
 
-				NDIlib_v4_load_ lib_load =
-					(NDIlib_v4_load_)loaded_lib->resolve("NDIlib_v4_load");
+				NDIlib_v5_load_ lib_load =
+					(NDIlib_v5_load_)loaded_lib->resolve("NDIlib_v5_load");
 
 				if (lib_load != nullptr) {
 					return lib_load();
 				}
 				else {
-					blog(LOG_INFO, "ERROR: NDIlib_v4_load not found in loaded library");
+					blog(LOG_INFO, "ERROR: NDIlib_v5_load not found in loaded library");
 				}
 			}
 			else {
