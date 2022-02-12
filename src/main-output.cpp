@@ -48,7 +48,6 @@ void main_output_start(const char* output_name)
 	obs_data_set_string(settings, "ndi_name", output_name);
 	obs_output_update(main_out, settings);
 	obs_data_release(settings);
-
 	obs_output_start(main_out);
 	main_output_running = true;
 }
